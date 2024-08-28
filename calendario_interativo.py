@@ -4,6 +4,10 @@ import os
 from PIL import Image
 import calendar
 
+# Inicializar o st.session_state para scroll_to_event
+if 'scroll_to_event' not in st.session_state:
+    st.session_state.scroll_to_event = False
+
 # Função para carregar datas importantes
 def carregar_datas_importantes():
     datas = {}
@@ -33,27 +37,29 @@ def criar_calendario_html_por_mes(ano, mes, datas_importantes):
     # Dias do mês
     primeiro_dia, num_dias = calendar.monthrange(ano, mes)
     dia_atual = date(ano, mes, 1)
-    for _ in range(primeiro_dia):
+
+    # Adicionar células vazias até o primeiro dia da semana correto
+    primeiro_dia = date(ano, mes, 1).weekday()
+    dia_da_semana = primeiro_dia % 7
+    for _ in range(dia_da_semana):
         html_calendario += "<td></td>"
 
+    num_dias = calendar.monthrange(ano, mes)[1]
     for dia in range(1, num_dias + 1):
-        if dia_atual.weekday() == 6 and dia_atual.day != 1:
+        data_atual = date(ano, mes, dia)
+        if data_atual in datas_importantes:
+            html_calendario += f"<td><button onClick='document.getElementById(\"evento_{data_atual.strftime('%Y-%m-%d')}\").scrollIntoView({{behavior: \"smooth\"}});'>{dia}</button></td>"
+        else:
+            html_calendario += f"<td>{dia}</td>"
+
+        dia_da_semana = (dia_da_semana + 1) % 7
+        if dia_da_semana == 0:
             html_calendario += "</tr><tr>"
 
-        if dia_atual in datas_importantes:
-            evento = datas_importantes[dia_atual]
-            html_calendario += (
-                f"<td style='border: 1px solid #ddd; padding: 10px; text-align: center; "
-                f"background-color: lightblue; cursor: pointer;' onclick='alert(\"{evento}\")'>"
-                f"{dia}</td>"
-            )
-        else:
-            html_calendario += (
-                f"<td style='border: 1px solid #ddd; padding: 10px; text-align: center;'>"
-                f"{dia}</td>"
-            )
-
-        dia_atual += timedelta(days=1)
+    # Adicionar células vazias até o final da semana
+    while dia_da_semana != 6:
+        html_calendario += "<td></td>"
+        dia_da_semana = (dia_da_semana + 1) % 7
 
     html_calendario += "</tr></table>"
     return html_calendario
@@ -74,14 +80,46 @@ for ano in range(data_inicio.year, data_fim.year + 1):
 # Mostrar calendário no Streamlit
 st.markdown(html_total, unsafe_allow_html=True)
 
-# Interatividade com o Streamlit
-st.write("Clique nas datas importantes para ver fotos:")
-data_selecionada = st.date_input("Selecione uma data", value=date.today(), min_value=data_inicio, max_value=data_fim)
+# Mostrar foto e recado quando uma data é clicada
+for data, descricao in datas_importantes.items():
+    if st.button(f"Mostrar evento de {data.strftime('%d/%m/%Y')}", key=data):
+        # Atualiza o estado da sessão para controlar a rolagem
+        st.session_state.scroll_to_event = data.strftime('%d/%m/%Y')
+        # Adiciona um ancoramento para rolar até a imagem ou vídeo
+        st.markdown(f"<div id='evento_{data}'></div>", unsafe_allow_html=True)
+        st.write(f"**{data.strftime('%d/%m/%Y')}** - {descricao}")
+        data_str = data.strftime('%Y-%m-%d')
+        foto_path = f'fotos/{data_str}.jpeg'
+        video_path = f'fotos/{data_str}.mp4'
+        
+        if os.path.exists(foto_path):
+            st.image(foto_path, caption=descricao)
+        elif os.path.exists(video_path):
+            st.video(video_path)
+            st.write(descricao)  # Adiciona a legenda abaixo do vídeo
+        else:
+            st.write("Nenhum arquivo encontrado para esta data.")
+            st.write(f"Verifique se o caminho do arquivo está correto: {foto_path} ou {video_path}")
 
-if data_selecionada in datas_importantes:
-    data_str = data_selecionada.strftime('%Y-%m-%d')
-    st.write(f"**{data_selecionada.strftime('%d/%m/%Y')}** - {datas_importantes[data_selecionada]}")
-    if os.path.exists(f'fotos/{data_str}.jpg'):
-        st.image(f'fotos/{data_str}.jpg', caption=datas_importantes[data_selecionada])
-else:
-    st.write("Não há evento ou foto para esta data.")
+        # JavaScript para rolar a página até o ancoramento
+        st.markdown(f"""
+            <script>
+                var element = document.getElementById('evento_{data}');
+                if (element) {{
+                    element.scrollIntoView({{behavior: 'smooth'}});
+                }}
+            </script>
+        """, unsafe_allow_html=True)
+
+# Executa o scroll se o botão tiver sido clicado
+if st.session_state.scroll_to_event:
+    st.markdown(f"""
+        <script>
+            var element = document.getElementById('evento_{st.session_state.scroll_to_event}');
+            if (element) {{
+                element.scrollIntoView({{behavior: 'smooth'}});
+            }}
+        </script>
+    """, unsafe_allow_html=True)
+    # Reseta o estado para evitar múltiplos scrolls
+    st.session_state.scroll_to_event = False
